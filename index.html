@@ -92,6 +92,9 @@
   #slotSheet { position: fixed; inset: 0; background: rgba(10,4,20,.8); display: none; align-items: flex-end; justify-content: center; z-index: 60; }
   #slotSheet.show { display: flex; }
   .sheet-box { background: var(--panel); width: 100%; max-width: 640px; border-radius: 20px 20px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
+  .vol-sticky { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 10px; background: var(--bg); padding: 10px 2px; }
+  .vol-sticky b { width: 42px; text-align: right; color: var(--gold); font-size: 14px; }
+  .vol-sticky span { font-size: 20px; }
   .note { background: #3a1430; border-left: 4px solid var(--pink); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.4; display: none; margin-top: 8px; }
   .note.show { display: block; }
 </style>
@@ -114,8 +117,8 @@
         <label class="toggle"><input type="checkbox" id="lockMic"> Vergrendel (handsfree)</label>
       </div>
       <div style="width:100%">
-        <div class="muted">Mic volume</div>
-        <input type="range" id="micVol" min="0" max="2" step="0.05" value="1.2">
+        <div class="muted">Mic volume <b id="micVolVal"></b></div>
+        <input type="range" id="micVol" min="0" max="100" step="1" value="80">
       </div>
       <div class="note" id="micNote"></div>
     </div>
@@ -129,6 +132,9 @@
       <button class="btn" id="falseBtn">🚨 Valse bingo</button>
     </div>
 
+    <div class="vol-sticky">
+      <span>🔊</span><input type="range" id="sfxVol" min="0" max="100" step="1" value="50"><b id="sfxVolVal"></b>
+    </div>
     <h2>Soundboard</h2>
     <div class="grid" id="sfxGrid"></div>
     <button class="btn" id="editSounds" style="width:100%;margin-top:10px">✏️ Eigen geluiden instellen</button>
@@ -138,10 +144,6 @@
     <p class="muted">Meme-geluiden komen van github.com/3kh0/soundboard, ze worden na de eerste keer op je telefoon bewaard en werken daarna ook offline.</p>
     <input type="file" id="slotFile" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac" style="display:none">
 
-    <div style="margin-top:14px">
-      <div class="muted">Volume geluidseffecten</div>
-      <input type="range" id="sfxVol" min="0" max="1.5" step="0.05" value="0.9">
-    </div>
   </section>
 
   <!-- RONDES -->
@@ -221,15 +223,21 @@
   const $ = (id) => document.getElementById(id);
 
   // ---------- Audio core ----------
-  let ctx, master, sfxBus, micBus, noiseBuf, reverbBuf;
+  let ctx, sfxBus, micBus, sfxOut, micOut, noiseBuf, reverbBuf;
+  // Slider 0..100 -> gain with a perceptual curve
+  const volToGain = (v) => Math.pow(v / 100, 2);
+  function limiter() {
+    const c = ctx.createDynamicsCompressor();
+    c.threshold.value = -6; c.knee.value = 0; c.ratio.value = 20; c.attack.value = 0.003; c.release.value = 0.15;
+    return c;
+  }
   function audio() {
     if (!ctx) {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
-      master = ctx.createDynamicsCompressor();
-      master.threshold.value = -10; master.ratio.value = 6;
-      master.connect(ctx.destination);
-      sfxBus = ctx.createGain(); sfxBus.gain.value = +$("sfxVol").value; sfxBus.connect(master);
-      micBus = ctx.createGain(); micBus.gain.value = +$("micVol").value; micBus.connect(master);
+      sfxOut = ctx.createGain(); sfxOut.gain.value = volToGain(+$("sfxVol").value); sfxOut.connect(ctx.destination);
+      micOut = ctx.createGain(); micOut.gain.value = volToGain(+$("micVol").value); micOut.connect(ctx.destination);
+      sfxBus = ctx.createGain(); sfxBus.gain.value = 0.7; sfxBus.connect(limiter()).connect(sfxOut);
+      micBus = ctx.createGain(); micBus.gain.value = 1.5; micBus.connect(limiter()).connect(micOut);
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -631,7 +639,14 @@
     renderBoard();
   })();
   renderBoard();
-  $("sfxVol").addEventListener("input", e => { if (sfxBus) sfxBus.gain.value = +e.target.value; });
+    function bindVol(id, getNode) {
+    const el = $(id); const saved = store.get(id, null); if (saved !== null) el.value = saved;
+    const label = $(id + "Val"); const show = () => { if (label) label.textContent = el.value + "%"; };
+    show();
+    el.addEventListener("input", () => { const n = getNode(); if (n) n.gain.setTargetAtTime(volToGain(+el.value), ctx.currentTime, 0.02); store.set(id, +el.value); show(); });
+  }
+  bindVol("sfxVol", () => sfxOut);
+  bindVol("micVol", () => micOut);
 
   // ---------- Drumroll while wheel spins ----------
   let rollTimer = null, rollStart = 0, rollSrc = null;
@@ -823,7 +838,7 @@
   ["pointerup", "pointerleave", "pointercancel"].forEach(ev => micBtn.addEventListener(ev, () => { if (micReady && !$("lockMic").checked) setLive(false); }));
   micBtn.addEventListener("contextmenu", e => e.preventDefault());
   $("lockMic").addEventListener("change", () => { if (micReady) setLive(false); });
-  $("micVol").addEventListener("input", e => { if (micBus) micBus.gain.value = +e.target.value; });
+
 
   // ---------- Rounds ----------
   const DEFAULT_ROUNDS = ["1 rij", "2 rijen", "4 hoeken", "Letter X", "Letter T", "Buitenrand", "Letter L", "3 rijen", "Volle kaart (dubbele punten!)"];
