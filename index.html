@@ -1069,16 +1069,22 @@
   });
 
   // Dedicated voice chain: normalize, compress for loudness, limit, then the SFX volume slider
-  let voiceIn = null;
+  // The intro has its own output at full level, independent of the SFX slider
+  let voiceIn = null, introFx = null;
   function voiceChain() {
     if (voiceIn) return voiceIn;
+    const introOut = ctx.createGain(); introOut.gain.value = 1; introOut.connect(ctx.destination);
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -28; comp.ratio.value = 5; comp.knee.value = 6; comp.attack.value = 0.003; comp.release.value = 0.25;
-    const makeup = ctx.createGain(); makeup.gain.value = 3.2;
+    comp.threshold.value = -38; comp.ratio.value = 8; comp.knee.value = 6; comp.attack.value = 0.002; comp.release.value = 0.2;
+    const makeup = ctx.createGain(); makeup.gain.value = 6;
+    const clip = ctx.createWaveShaper(); const c = new Float32Array(2048);
+    for (let i = 0; i < 2048; i++) { const x = i / 1024 - 1; c[i] = Math.tanh(1.6 * x) / Math.tanh(1.6); }
+    clip.curve = c; clip.oversample = "2x";
     const lim = ctx.createDynamicsCompressor();
-    lim.threshold.value = -1; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
+    lim.threshold.value = -0.5; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.08;
     voiceIn = ctx.createGain();
-    voiceIn.connect(comp).connect(makeup).connect(lim).connect(sfxOut);
+    voiceIn.connect(comp).connect(makeup).connect(clip).connect(lim).connect(introOut);
+    introFx = ctx.createGain(); introFx.connect(limiter()).connect(introOut);
     return voiceIn;
   }
   function peakGain(buf) {
@@ -1098,14 +1104,15 @@
     playAt(intro.voice, t, peakGain(intro.voice), voiceChain());
     // Light hype at the end: crowd + one airhorn, kept well below the voice
     const end = t + Math.max(0, intro.voice.duration - 0.4);
+    const fx = introFx;
     const crowd = intro.applause || await loadRemote("kidsyay");
     if (crowd) {
-      const g = playAt(crowd, end, 0.35);
-      g.gain.setValueAtTime(0.35, end + Math.min(crowd.duration, 5) - 1.2);
+      const g = playAt(crowd, end, 0.85, fx);
+      g.gain.setValueAtTime(0.85, end + Math.min(crowd.duration, 5) - 1.2);
       g.gain.linearRampToValueAtTime(0, end + Math.min(crowd.duration, 5));
     }
     const horn = await loadRemote("airhorn");
-    if (horn) playAt(horn, end + 0.15, 0.25);
+    if (horn) playAt(horn, end + 0.15, 0.6, fx);
   }
   function openIntro() { $("introSheet").classList.add("show"); }
   $("introBtn").addEventListener("click", playIntro);
