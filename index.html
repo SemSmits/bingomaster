@@ -135,7 +135,7 @@
     <p class="muted" id="editHelp" style="display:none">Tik op een knop om er een echt geluid aan te koppelen (mp3/wav/m4a van je telefoon). Knoppen met ⭐ gebruiken al je eigen geluid. Onderaan staan ook de drumroll en de klap van het rad. Je geluiden blijven bewaard op deze telefoon.</p>
     <h2>Memes</h2>
     <div class="grid" id="memeGrid"></div>
-    <p class="muted">Meme-geluiden komen van github.com/3kh0/soundboard, dus je hebt internet nodig.</p>
+    <p class="muted">Meme-geluiden komen van github.com/3kh0/soundboard, ze worden na de eerste keer op je telefoon bewaard en werken daarna ook offline.</p>
     <input type="file" id="slotFile" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac" style="display:none">
 
     <div style="margin-top:14px">
@@ -426,19 +426,24 @@
       if (this._db) return Promise.resolve(this._db);
       return new Promise((res, rej) => {
         try {
-          const r = indexedDB.open("bingomaster", 1);
-          r.onupgradeneeded = () => r.result.createObjectStore("sounds");
+          const r = indexedDB.open("bingomaster", 2);
+          r.onupgradeneeded = () => {
+            if (!r.result.objectStoreNames.contains("sounds")) r.result.createObjectStore("sounds");
+            if (!r.result.objectStoreNames.contains("cache")) r.result.createObjectStore("cache");
+          };
           r.onsuccess = () => { this._db = r.result; res(this._db); };
           r.onerror = () => rej(r.error);
         } catch (e) { rej(e); }
       });
     },
-    async op(mode, fn) {
+    async op(mode, fn, store = "sounds") {
       const d = await this.open();
-      return new Promise((res, rej) => { const tx = d.transaction("sounds", mode); const r = fn(tx.objectStore("sounds")); tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); });
+      return new Promise((res, rej) => { const tx = d.transaction(store, mode); const r = fn(tx.objectStore(store)); tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); });
     },
     put(k, v) { return this.op("readwrite", s => s.put(v, k)); },
     del(k) { return this.op("readwrite", s => s.delete(k)); },
+    cacheGet(k) { return this.op("readonly", s => s.get(k), "cache"); },
+    cachePut(k, v) { return this.op("readwrite", s => s.put(v, k), "cache"); },
     async all() {
       const d = await this.open();
       return new Promise((res, rej) => {
@@ -488,11 +493,16 @@
     if (loading[file]) return loading[file];
     audio();
     loading[file] = (async () => {
+      try {
+        const cached = await db.cacheGet(file);
+        if (cached) { remote[file] = await new Promise((res, rej) => ctx.decodeAudioData(cached.slice(0), res, rej)); return remote[file]; }
+      } catch {}
       for (const base of SB_URLS) {
         try {
           const r = await fetch(base + encodeURIComponent(file) + ".mp3");
           if (!r.ok) continue;
           const ab = await r.arrayBuffer();
+          db.cachePut(file, ab.slice(0)).catch(() => {});
           remote[file] = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
           return remote[file];
         } catch {}
