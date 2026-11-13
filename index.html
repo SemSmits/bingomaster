@@ -994,16 +994,16 @@
   // ---------- Opkomst (ElevenLabs) ----------
   const EL = "https://api.elevenlabs.io/v1";
   const DEFAULT_INTRO = "Ladies and gentlemen! Welkom bij de derde editie van de Lowlands bingo! Allemaal een daverend applaus voor de bingomaster: Sem Bingo Bal!";
-  const PREMADE = [["nPczCjzI2devNBz1zQrb", "Brian (diep, announcer)"], ["pNInz6obpgDQGcFmaJgB", "Adam (zware stem)"], ["JBFqnCBsd6RMkjVDRZzb", "George (warm)"], ["onwK4e9ZLuTAKqWW03F9", "Daniel (nieuwslezer)"], ["IKne3meq5aSn9XLyUdCD", "Charlie (energiek)"]];
+  const PREMADE = [["UII4xWDUviYCKDpBl5jC", "Sem's announcer"], ["nPczCjzI2devNBz1zQrb", "Brian (diep, announcer)"], ["pNInz6obpgDQGcFmaJgB", "Adam (zware stem)"], ["JBFqnCBsd6RMkjVDRZzb", "George (warm)"], ["onwK4e9ZLuTAKqWW03F9", "Daniel (nieuwslezer)"], ["IKne3meq5aSn9XLyUdCD", "Charlie (energiek)"]];
   const intro = { voice: null, applause: null };
   const elKey = $("elKey"), elVoice = $("elVoice"), elText = $("elText"), elStatus = $("elStatus");
   function fillVoices(list, selected) {
     elVoice.innerHTML = list.map(([id, n]) => `<option value="${id}" ${id === selected ? "selected" : ""}>${escapeHtml(n)}</option>`).join("");
   }
-  fillVoices(PREMADE, store.get("elVoice", PREMADE[0][0]));
+  fillVoices(PREMADE, store.get("elVoice2", PREMADE[0][0]));
   elKey.value = store.get("elKey", "");
   elText.value = store.get("elText", DEFAULT_INTRO);
-  [["elKey", elKey], ["elText", elText], ["elVoice", elVoice]].forEach(([k, el]) => el.addEventListener("change", () => store.set(k, el.value.trim())));
+  [["elKey", elKey], ["elText", elText], ["elVoice2", elVoice]].forEach(([k, el]) => el.addEventListener("change", () => store.set(k, el.value.trim())));
 
   async function loadIntroFromCache() {
     try {
@@ -1027,7 +1027,7 @@
       }
       const j = await r.json();
       const list = j.voices.map(v => [v.voice_id, v.name + (v.labels && v.labels.description ? " (" + v.labels.description + ")" : "")]);
-      fillVoices(list, elVoice.value); store.set("elVoice", elVoice.value);
+      fillVoices(list, elVoice.value); store.set("elVoice2", elVoice.value);
       elStatus.textContent = `${list.length} stemmen geladen.`;
     } catch (e) { elStatus.textContent = "Laden mislukt: " + e.message; }
   });
@@ -1044,7 +1044,7 @@
   $("elGenerate").addEventListener("click", async () => {
     const key = elKey.value.trim();
     if (!key) { elStatus.textContent = "Vul eerst je key in."; return; }
-    store.set("elKey", key); store.set("elText", elText.value); store.set("elVoice", elVoice.value);
+    store.set("elKey", key); store.set("elText", elText.value); store.set("elVoice2", elVoice.value);
     audio();
     try {
       elStatus.textContent = "Stem genereren…";
