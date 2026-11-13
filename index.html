@@ -95,6 +95,10 @@
   .vol-sticky { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 10px; background: var(--bg); padding: 10px 2px; }
   .vol-sticky b { width: 42px; text-align: right; color: var(--gold); font-size: 14px; }
   .vol-sticky span { font-size: 20px; }
+  #introBtn { width: 100%; padding: 18px; font-size: 20px; letter-spacing: 1px; margin-bottom: 8px; background: linear-gradient(90deg, var(--gold), var(--pink)); color: #1a0010; font-weight: 900; }
+  .sheet-wrap { position: fixed; inset: 0; background: rgba(10,4,20,.8); display: none; align-items: flex-end; justify-content: center; z-index: 60; }
+  .sheet-wrap.show { display: flex; }
+  select.text { appearance: none; -webkit-appearance: none; }
   .note { background: #3a1430; border-left: 4px solid var(--pink); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.4; display: none; margin-top: 8px; }
   .note.show { display: block; }
 </style>
@@ -108,6 +112,8 @@
 <main>
   <!-- SHOW -->
   <section class="tab active" id="tab-show">
+    <button class="btn" id="introBtn">🎙️ OPKOMST</button>
+    <button class="btn small" id="introSetup" style="width:100%;margin:-4px 0 12px;background:transparent;color:var(--muted)">⚙️ Opkomst instellen</button>
     <div class="card mic-wrap">
       <button id="micBtn" class="off" aria-label="Microfoon">🎤</button>
       <div class="mic-hint" id="micHint">Tik om de microfoon aan te zetten</div>
@@ -204,6 +210,21 @@
   <button class="btn" id="slotTest" style="width:100%;margin-bottom:8px">▶️ Test</button>
   <button class="btn" id="slotReset" style="width:100%;margin-bottom:8px"></button>
   <button class="btn" id="slotCancel" style="width:100%">Sluiten</button>
+</div></div>
+
+<div id="introSheet" class="sheet-wrap"><div class="sheet-box">
+  <div class="ov-title" style="font-size:22px">🎙️ Opkomst instellen</div>
+  <p class="muted">Je ElevenLabs-key wordt alleen op deze telefoon bewaard en komt niet online te staan.</p>
+  <input class="text" id="elKey" type="password" placeholder="ElevenLabs API key" autocomplete="off" style="margin-bottom:8px">
+  <div class="row" style="margin-bottom:8px">
+    <select class="text" id="elVoice" style="flex:3"></select>
+    <button class="btn small" id="elLoadVoices" style="flex:1">Laad mijn stemmen</button>
+  </div>
+  <textarea class="text" id="elText" rows="4" style="margin-bottom:8px;resize:vertical"></textarea>
+  <p class="muted" id="elStatus"></p>
+  <button class="btn gold" id="elGenerate" style="width:100%;margin-bottom:8px">✨ Genereer opkomst</button>
+  <button class="btn" id="elTest" style="width:100%;margin-bottom:8px">▶️ Afspelen</button>
+  <button class="btn" id="elClose" style="width:100%">Sluiten</button>
 </div></div>
 
 <div id="overlay"><div class="ov-box">
@@ -969,6 +990,94 @@
   const autoSurprise = $("autoSurprise");
   autoSurprise.checked = store.get("auto", true);
   autoSurprise.addEventListener("change", () => store.set("auto", autoSurprise.checked));
+
+  // ---------- Opkomst (ElevenLabs) ----------
+  const EL = "https://api.elevenlabs.io/v1";
+  const DEFAULT_INTRO = "Ladies and gentlemen! Welkom bij de derde editie van de Lowlands bingo! Allemaal een daverend applaus voor de bingomaster: Sem Bingo Bal!";
+  const PREMADE = [["nPczCjzI2devNBz1zQrb", "Brian (diep, announcer)"], ["pNInz6obpgDQGcFmaJgB", "Adam (zware stem)"], ["JBFqnCBsd6RMkjVDRZzb", "George (warm)"], ["onwK4e9ZLuTAKqWW03F9", "Daniel (nieuwslezer)"], ["IKne3meq5aSn9XLyUdCD", "Charlie (energiek)"]];
+  const intro = { voice: null, applause: null };
+  const elKey = $("elKey"), elVoice = $("elVoice"), elText = $("elText"), elStatus = $("elStatus");
+  function fillVoices(list, selected) {
+    elVoice.innerHTML = list.map(([id, n]) => `<option value="${id}" ${id === selected ? "selected" : ""}>${escapeHtml(n)}</option>`).join("");
+  }
+  fillVoices(PREMADE, store.get("elVoice", PREMADE[0][0]));
+  elKey.value = store.get("elKey", "");
+  elText.value = store.get("elText", DEFAULT_INTRO);
+  [["elKey", elKey], ["elText", elText], ["elVoice", elVoice]].forEach(([k, el]) => el.addEventListener("change", () => store.set(k, el.value)));
+
+  async function loadIntroFromCache() {
+    try {
+      audio();
+      for (const k of ["voice", "applause"]) {
+        const ab = await db.cacheGet("intro_" + k);
+        if (ab) intro[k] = await new Promise((res, rej) => ctx.decodeAudioData(ab.slice(0), res, rej));
+      }
+    } catch {}
+  }
+  loadIntroFromCache();
+
+  $("elLoadVoices").addEventListener("click", async () => {
+    if (!elKey.value.trim()) { elStatus.textContent = "Vul eerst je key in."; return; }
+    elStatus.textContent = "Stemmen laden…";
+    try {
+      const r = await fetch(EL + "/voices", { headers: { "xi-api-key": elKey.value.trim() } });
+      if (!r.ok) throw new Error(r.status === 401 ? "Key klopt niet (401)." : "Fout " + r.status);
+      const j = await r.json();
+      const list = j.voices.map(v => [v.voice_id, v.name + (v.labels && v.labels.description ? " (" + v.labels.description + ")" : "")]);
+      fillVoices(list, elVoice.value); store.set("elVoice", elVoice.value);
+      elStatus.textContent = `${list.length} stemmen geladen.`;
+    } catch (e) { elStatus.textContent = "Laden mislukt: " + e.message; }
+  });
+
+  async function elFetchAudio(url, body) {
+    const r = await fetch(url, { method: "POST", headers: { "xi-api-key": elKey.value.trim(), "Content-Type": "application/json", "Accept": "audio/mpeg" }, body: JSON.stringify(body) });
+    if (!r.ok) {
+      let msg = "Fout " + r.status;
+      try { const j = await r.json(); msg += ": " + (j.detail && (j.detail.message || j.detail.status || JSON.stringify(j.detail))); } catch {}
+      throw new Error(msg);
+    }
+    return r.arrayBuffer();
+  }
+  $("elGenerate").addEventListener("click", async () => {
+    const key = elKey.value.trim();
+    if (!key) { elStatus.textContent = "Vul eerst je key in."; return; }
+    store.set("elKey", key); store.set("elText", elText.value); store.set("elVoice", elVoice.value);
+    audio();
+    try {
+      elStatus.textContent = "Stem genereren…";
+      const v = await elFetchAudio(`${EL}/text-to-speech/${elVoice.value}?output_format=mp3_44100_128`, {
+        text: elText.value.trim() || DEFAULT_INTRO, model_id: "eleven_multilingual_v2",
+        voice_settings: { stability: 0.3, similarity_boost: 0.8, style: 0.7, use_speaker_boost: true }
+      });
+      intro.voice = await new Promise((res, rej) => ctx.decodeAudioData(v.slice(0), res, rej));
+      await db.cachePut("intro_voice", v).catch(() => {});
+      elStatus.textContent = "Applaus genereren…";
+      try {
+        const a = await elFetchAudio(`${EL}/sound-generation`, { text: "Huge excited crowd cheering, whistling and applauding loudly at a live game show", duration_seconds: 7, prompt_influence: 0.5 });
+        intro.applause = await new Promise((res, rej) => ctx.decodeAudioData(a.slice(0), res, rej));
+        await db.cachePut("intro_applause", a).catch(() => {});
+        elStatus.textContent = "Klaar! Tik op Afspelen om te testen.";
+      } catch (e) { elStatus.textContent = "Stem is klaar. Applaus lukte niet (" + e.message + "), ik gebruik het standaard applaus."; }
+    } catch (e) {
+      elStatus.textContent = "Mislukt: " + e.message;
+    }
+  });
+
+  function playIntro() {
+    audio();
+    if (!intro.voice) { openIntro(); elStatus.textContent = "Nog geen opkomst gemaakt. Vul je key in en tik op Genereer."; return; }
+    const t = ctx.currentTime + 0.05;
+    const s1 = ctx.createBufferSource(); s1.buffer = intro.voice; s1.connect(sfxBus); s1.start(t);
+    const at = t + Math.max(0, intro.voice.duration - 0.6);
+    if (intro.applause) { const s2 = ctx.createBufferSource(); s2.buffer = intro.applause; s2.connect(sfxBus); s2.start(at); }
+    else setTimeout(() => { play("applause"); SFX.applause(5); }, (at - ctx.currentTime) * 1000);
+    setTimeout(() => play("airhorn"), (at - ctx.currentTime + 0.2) * 1000);
+  }
+  function openIntro() { $("introSheet").classList.add("show"); }
+  $("introBtn").addEventListener("click", playIntro);
+  $("introSetup").addEventListener("click", openIntro);
+  $("elTest").addEventListener("click", playIntro);
+  $("elClose").addEventListener("click", () => $("introSheet").classList.remove("show"));
 
   // ---------- Tabs ----------
   document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
