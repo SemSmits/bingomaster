@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Bingomaster</title>
+<style>
+  :root {
+    --bg: #12081f; --panel: #1f1135; --panel2: #2b1a47; --text: #fff6e8; --muted: #b9a8d6;
+    --gold: #ffcc33; --pink: #ff3d8b; --cyan: #2ee6d6; --green: #39d97a; --red: #ff4d4d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { padding-bottom: 76px; user-select: none; -webkit-user-select: none; }
+  header { padding: 14px 16px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: 1px; background: linear-gradient(90deg, var(--gold), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .round-pill { background: var(--panel2); border-radius: 999px; padding: 6px 12px; font-size: 13px; color: var(--gold); font-weight: 700; white-space: nowrap; }
+  main { padding: 0 14px; max-width: 640px; margin: 0 auto; }
+  section.tab { display: none; }
+  section.tab.active { display: block; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin: 18px 2px 8px; }
+  .card { background: var(--panel); border-radius: 16px; padding: 14px; margin-bottom: 12px; }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+  .btn { background: var(--panel2); border-radius: 14px; padding: 12px; font-weight: 700; font-size: 15px; transition: transform .08s; }
+  .btn:active { transform: scale(.95); }
+  .btn.small { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
+  .btn.gold { background: var(--gold); color: #2a1600; }
+  .btn.pink { background: var(--pink); color: #fff; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+
+  /* Mic */
+  .mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #micBtn { width: 150px; height: 150px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff6fa8, var(--pink) 60%, #a3124d); font-size: 54px; box-shadow: 0 0 0 6px rgba(255,61,139,.2); touch-action: none; }
+  #micBtn.live { animation: pulse 1s infinite; background: radial-gradient(circle at 35% 30%, #7dffb0, var(--green) 60%, #13803f); box-shadow: 0 0 0 10px rgba(57,217,122,.3); }
+  #micBtn.off { filter: grayscale(.7) brightness(.8); }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 18px rgba(57,217,122,.12); } }
+  .mic-hint { font-size: 13px; color: var(--muted); text-align: center; min-height: 18px; }
+  .meter { width: 100%; height: 8px; background: var(--panel2); border-radius: 99px; overflow: hidden; }
+  .meter > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--green), var(--gold), var(--red)); transition: width .05s; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .chip { background: var(--panel2); padding: 8px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .chip.on { background: var(--cyan); color: #04201d; }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: var(--gold); }
+
+  /* Soundboard */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .sfx { background: var(--panel2); border-radius: 14px; padding: 12px 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; }
+  .sfx .e { font-size: 28px; }
+  .sfx:active, .sfx.playing { background: var(--cyan); color: #04201d; }
+  .big-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .big-actions .btn { padding: 16px 8px; font-size: 16px; }
+  #spinBtn.spinning { background: var(--gold); color: #2a1600; animation: shake .15s infinite; }
+  @keyframes shake { 50% { transform: rotate(-1.5deg); } }
+
+  /* Overlay */
+  #overlay { position: fixed; inset: 0; background: rgba(10,4,20,.92); display: none; align-items: center; justify-content: center; z-index: 50; padding: 24px; }
+  #overlay.show { display: flex; animation: pop .25s ease-out; }
+  @keyframes pop { from { transform: scale(.85); opacity: 0; } }
+  .ov-box { text-align: center; max-width: 420px; }
+  .ov-emoji { font-size: 80px; }
+  .ov-title { font-size: 30px; font-weight: 900; color: var(--gold); margin: 8px 0; }
+  .ov-text { font-size: 20px; line-height: 1.35; margin-bottom: 20px; }
+
+  /* Rounds & score */
+  .round { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 12px; margin-bottom: 6px; background: var(--panel2); }
+  .round.current { outline: 2px solid var(--gold); }
+  .round.done { opacity: .55; }
+  .round .n { width: 28px; height: 28px; border-radius: 50%; background: var(--bg); display: grid; place-items: center; font-weight: 800; font-size: 13px; flex: none; }
+  .round input { flex: 1; background: transparent; border: 0; color: var(--text); font: inherit; font-size: 14px; min-width: 0; }
+  .round select { background: var(--bg); color: var(--text); border: 0; border-radius: 8px; padding: 6px; font: inherit; font-size: 13px; max-width: 120px; }
+  .player { display: flex; align-items: center; gap: 8px; padding: 10px; background: var(--panel2); border-radius: 12px; margin-bottom: 6px; }
+  .player .name { flex: 1; font-weight: 700; }
+  .player .pts { font-size: 22px; font-weight: 900; color: var(--gold); width: 36px; text-align: center; }
+  .player .del { background: transparent; color: var(--muted); font-size: 18px; padding: 0 4px; }
+  input.text { width: 100%; background: var(--panel2); border: 0; border-radius: 12px; padding: 12px; color: var(--text); font: inherit; font-size: 16px; }
+  .muted { color: var(--muted); font-size: 13px; }
+
+  /* Nicknames */
+  #nickBig { text-align: center; padding: 6px 0 2px; min-height: 96px; }
+  #nickBig .num { font-size: 56px; font-weight: 900; color: var(--gold); line-height: 1; }
+  #nickBig .nick { font-size: 20px; margin-top: 6px; }
+  .nick-list { display: grid; grid-template-columns: 1fr; gap: 4px; }
+  .nick-item { display: flex; gap: 10px; padding: 8px 10px; background: var(--panel2); border-radius: 10px; font-size: 14px; }
+  .nick-item b { color: var(--gold); width: 26px; text-align: right; flex: none; }
+
+  nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: #0c0516; border-top: 1px solid var(--panel2); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); z-index: 40; }
+  nav button { flex: 1; background: transparent; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; font-weight: 600; padding: 4px 0; }
+  nav button .e { font-size: 22px; }
+  nav button.active { color: var(--gold); }
+  .note { background: #3a1430; border-left: 4px solid var(--pink); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.4; display: none; margin-top: 8px; }
+  .note.show { display: block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎡 BINGOMASTER</h1>
+  <div class="round-pill" id="roundPill">Ronde 1/9</div>
+</header>
+
+<main>
+  <!-- SHOW -->
+  <section class="tab active" id="tab-show">
+    <div class="card mic-wrap">
+      <button id="micBtn" class="off" aria-label="Microfoon">🎤</button>
+      <div class="mic-hint" id="micHint">Tik om de microfoon aan te zetten</div>
+      <div class="meter"><div id="meterBar"></div></div>
+      <div class="chips" id="fxChips"></div>
+      <div class="row" style="width:100%">
+        <label class="toggle"><input type="checkbox" id="lockMic"> Vergrendel (handsfree)</label>
+      </div>
+      <div style="width:100%">
+        <div class="muted">Mic volume</div>
+        <input type="range" id="micVol" min="0" max="2" step="0.05" value="1.2">
+      </div>
+      <div class="note" id="micNote"></div>
+    </div>
+
+    <div class="big-actions">
+      <button class="btn gold" id="spinBtn">🥁 Rad draait</button>
+      <button class="btn pink" id="surpriseBtn">🎲 Verrassing</button>
+    </div>
+    <div class="big-actions">
+      <button class="btn" id="bingoBtn">🎉 BINGO!</button>
+      <button class="btn" id="falseBtn">🚨 Valse bingo</button>
+    </div>
+
+    <h2>Soundboard</h2>
+    <div class="grid" id="sfxGrid"></div>
+
+    <div style="margin-top:14px">
+      <div class="muted">Volume geluidseffecten</div>
+      <input type="range" id="sfxVol" min="0" max="1.5" step="0.05" value="0.9">
+    </div>
+  </section>
+
+  <!-- RONDES -->
+  <section class="tab" id="tab-rounds">
+    <h2>Rondes</h2>
+    <div class="card">
+      <div id="roundList"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="prevRound">◀ Vorige</button>
+        <button class="btn gold" id="nextRound">Volgende ronde ▶</button>
+      </div>
+      <p class="muted">Tik op een patroon om het aan te passen. Kies per ronde de winnaar, dan telt de score automatisch mee. De laatste ronde telt dubbel.</p>
+    </div>
+  </section>
+
+  <!-- SCORE -->
+  <section class="tab" id="tab-score">
+    <h2>Scorebord</h2>
+    <div class="card">
+      <div id="playerList"></div>
+      <div class="row" style="margin-top:8px">
+        <input class="text" id="newPlayer" placeholder="Naam toevoegen" style="flex:3">
+        <button class="btn gold" id="addPlayer" style="flex:1">+</button>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn" id="showWinner">👑 Kampioen</button>
+      <button class="btn" id="showLoser">🐩 Poedelprijs</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn small" id="resetAll">Alles resetten</button>
+    </div>
+  </section>
+
+  <!-- BIJNAMEN -->
+  <section class="tab" id="tab-nicks">
+    <h2>Bijnamen</h2>
+    <div class="card">
+      <input class="text" id="nickSearch" inputmode="numeric" placeholder="Typ een nummer…">
+      <div id="nickBig"></div>
+    </div>
+    <div class="nick-list" id="nickList"></div>
+  </section>
+</main>
+
+<nav>
+  <button data-tab="show" class="active"><span class="e">🎤</span>Show</button>
+  <button data-tab="rounds"><span class="e">🎯</span>Rondes</button>
+  <button data-tab="score"><span class="e">🏆</span>Score</button>
+  <button data-tab="nicks"><span class="e">🔢</span>Bijnamen</button>
+</nav>
+
+<div id="overlay"><div class="ov-box">
+  <div class="ov-emoji" id="ovEmoji"></div>
+  <div class="ov-title" id="ovTitle"></div>
+  <div class="ov-text" id="ovText"></div>
+  <button class="btn gold" id="ovClose" style="padding:14px 28px">Door!</button>
+</div></div>
+
+<script>
+(() => {
+  // ---------- Storage helpers ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("bm_" + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("bm_" + k, JSON.stringify(v)); } catch {} }
+  };
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- Audio core ----------
+  let ctx, master, sfxBus, micBus, noiseBuf, reverbBuf;
+  function audio() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createDynamicsCompressor();
+      master.threshold.value = -10; master.ratio.value = 6;
+      master.connect(ctx.destination);
+      sfxBus = ctx.createGain(); sfxBus.gain.value = +$("sfxVol").value; sfxBus.connect(master);
+      micBus = ctx.createGain(); micBus.gain.value = +$("micVol").value; micBus.connect(master);
+      noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      reverbBuf = makeImpulse(2.6, 2.2);
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+  function makeImpulse(sec, decay) {
+    const len = Math.floor(ctx.sampleRate * sec);
+    const b = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = b.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    }
+    return b;
+  }
+  const now = () => ctx.currentTime;
+  function noise(t, dur, { type = "bandpass", freq = 2000, q = 1, peak = 0.5, attack = 0.002, out = sfxBus } = {}) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f).connect(g).connect(out);
+    s.start(t, Math.random() * 1.5); s.stop(t + dur + 0.05);
+  }
+  function tone(t, dur, freq, { type = "sine", peak = 0.3, attack = 0.01, release = null, out = sfxBus, freqEnd = null, filter = null } = {}) {
+    const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (freqEnd) o.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + attack);
+    if (release) { g.gain.setValueAtTime(peak, t + dur - release); g.gain.linearRampToValueAtTime(0, t + dur); }
+    else g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let node = o;
+    if (filter) { const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = filter; node.connect(f); node = f; }
+    node.connect(g).connect(out);
+    o.start(t); o.stop(t + dur + 0.05);
+    return o;
+  }
+  function brass(t, dur, freq, peak = 0.12) {
+    [-6, 6].forEach(det => {
+      const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = freq; o.detune.value = det;
+      const f = ctx.createBiquadFilter(); f.type = "lowpass";
+      f.frequency.setValueAtTime(500, t); f.frequency.linearRampToValueAtTime(2600, t + 0.05); f.frequency.linearRampToValueAtTime(1600, t + dur);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + 0.03);
+      g.gain.setValueAtTime(peak, t + dur - 0.06); g.gain.linearRampToValueAtTime(0, t + dur);
+      o.connect(f).connect(g).connect(sfxBus); o.start(t); o.stop(t + dur + 0.05);
+    });
+  }
+  const kick = (t, p = 0.9) => tone(t, 0.35, 150, { freqEnd: 45, peak: p });
+  const snare = (t, p = 0.5) => { noise(t, 0.16, { type: "highpass", freq: 1500, peak: p }); tone(t, 0.1, 190, { peak: p * 0.4, type: "triangle" }); };
+  const tom = (t, f, p = 0.7) => tone(t, 0.3, f, { freqEnd: f * 0.6, peak: p });
+  const crash = (t, p = 0.45, dur = 2.2) => { noise(t, dur, { type: "highpass", freq: 5000, peak: p }); noise(t, dur * 0.6, { freq: 8000, q: 0.5, peak: p * 0.5 }); };
+
+  // ---------- Sound effects ----------
+  const SFX = {
+    airhorn() {
+      const t = now();
+      [[0, 0.14], [0.2, 0.14], [0.42, 0.8]].forEach(([o, d]) => {
+        [415, 418, 622].forEach(f => {
+          const osc = ctx.createOscillator(); osc.type = "sawtooth"; osc.frequency.setValueAtTime(f * 0.97, t + o); osc.frequency.linearRampToValueAtTime(f, t + o + 0.04);
+          const sh = ctx.createWaveShaper(); const c = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i / 128 - 1; c[i] = Math.tanh(3 * x); } sh.curve = c;
+          const fl = ctx.createBiquadFilter(); fl.type = "lowpass"; fl.frequency.value = 3200;
+          const g = ctx.createGain(); g.gain.setValueAtTime(0, t + o); g.gain.linearRampToValueAtTime(0.11, t + o + 0.02); g.gain.setValueAtTime(0.11, t + o + d - 0.03); g.gain.linearRampToValueAtTime(0, t + o + d);
+          osc.connect(sh).connect(fl).connect(g).connect(sfxBus); osc.start(t + o); osc.stop(t + o + d + 0.05);
+        });
+      });
+      return 1.3;
+    },
+    fail() {
+      const t = now(); const notes = [[311, 0.42], [294, 0.42], [277, 0.42], [262, 1.4]]; let o = 0;
+      notes.forEach(([f, d], i) => {
+        const osc = ctx.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = f;
+        if (i === 3) {
+          const lfo = ctx.createOscillator(); lfo.frequency.value = 6; const lg = ctx.createGain(); lg.gain.value = 7;
+          lfo.connect(lg).connect(osc.frequency); lfo.start(t + o + 0.15); lfo.stop(t + o + d);
+          osc.frequency.setValueAtTime(f, t + o); osc.frequency.linearRampToValueAtTime(f * 0.92, t + o + d);
+        }
+        const fl = ctx.createBiquadFilter(); fl.type = "lowpass"; fl.Q.value = 4;
+        fl.frequency.setValueAtTime(400, t + o); fl.frequency.linearRampToValueAtTime(1500, t + o + 0.12); fl.frequency.linearRampToValueAtTime(700, t + o + d);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0, t + o); g.gain.linearRampToValueAtTime(0.28, t + o + 0.05); g.gain.setValueAtTime(0.28, t + o + d - 0.1); g.gain.linearRampToValueAtTime(0, t + o + d);
+        osc.connect(fl).connect(g).connect(sfxBus); osc.start(t + o); osc.stop(t + o + d + 0.05);
+        o += d + 0.04;
+      });
+      return 3;
+    },
+    fanfare() {
+      const t = now(); const C = 523.25, E = 659.25, G = 783.99, C2 = 1046.5;
+      brass(t, 0.12, C); brass(t + 0.14, 0.12, C); brass(t + 0.28, 0.12, C);
+      brass(t + 0.42, 0.35, E); brass(t + 0.8, 0.12, G); brass(t + 0.94, 0.12, E);
+      [C, E, G, C2].forEach(f => brass(t + 1.08, 1.3, f, 0.09));
+      kick(t + 1.08); crash(t + 1.08, 0.35);
+      return 2.5;
+    },
+    applause(dur = 3.5) {
+      const t = now(); const count = Math.floor(dur * 140);
+      for (let i = 0; i < count; i++) {
+        const at = Math.random() * dur;
+        const env = Math.min(1, at / 0.3) * Math.min(1, (dur - at) / 1.2);
+        noise(t + at, 0.03 + Math.random() * 0.03, { freq: 900 + Math.random() * 1800, q: 1.2, peak: 0.25 * env });
+      }
+      return dur;
+    },
+    boo() {
+      const t = now(), dur = 2.4;
+      for (let v = 0; v < 6; v++) {
+        const f0 = 95 + Math.random() * 70;
+        const o = ctx.createOscillator(); o.type = "sawtooth";
+        o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(f0 * 0.85, t + dur);
+        const f1 = ctx.createBiquadFilter(); f1.type = "bandpass"; f1.frequency.value = 450; f1.Q.value = 2.5;
+        const g = ctx.createGain(); const st = Math.random() * 0.25;
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.35, t + st + 0.3); g.gain.setValueAtTime(0.35, t + dur - 0.6); g.gain.linearRampToValueAtTime(0, t + dur);
+        o.connect(f1).connect(g).connect(sfxBus); o.start(t); o.stop(t + dur + 0.05);
+      }
+      return dur;
+    },
+    ooh() {
+      const t = now(), dur = 2;
+      for (let v = 0; v < 6; v++) {
+        const f0 = 160 + Math.random() * 120;
+        const o = ctx.createOscillator(); o.type = "sawtooth";
+        o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(f0 * 1.25, t + 0.7); o.frequency.linearRampToValueAtTime(f0 * 0.95, t + dur);
+        const f1 = ctx.createBiquadFilter(); f1.type = "bandpass"; f1.frequency.value = 380; f1.Q.value = 3;
+        const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.4, t + 0.3); g.gain.linearRampToValueAtTime(0, t + dur);
+        o.connect(f1).connect(g).connect(sfxBus); o.start(t); o.stop(t + dur + 0.05);
+      }
+      return dur;
+    },
+    ding() {
+      const t = now();
+      [0, 0.25].forEach((o, i) => { const f = i ? 1318.5 : 1046.5; tone(t + o, 1.4, f, { peak: 0.3 }); tone(t + o, 0.8, f * 2.76, { peak: 0.06 }); });
+      return 1.6;
+    },
+    buzzer() {
+      const t = now();
+      [82, 87].forEach(f => tone(t, 0.9, f, { type: "square", peak: 0.16, release: 0.05, filter: 1400, attack: 0.005 }));
+      return 1;
+    },
+    badumtss() {
+      const t = now(); tom(t, 180); tom(t + 0.16, 130); kick(t + 0.38, 0.7); crash(t + 0.38, 0.35, 1.3);
+      return 1.6;
+    },
+    ticktock() {
+      const t = now();
+      for (let i = 0; i < 10; i++) tone(t + i * 0.5, 0.05, i % 2 ? 900 : 1300, { peak: 0.35, type: "square", filter: 3000, attack: 0.001 });
+      tone(t + 5, 1.2, 1568, { peak: 0.25 });
+      return 6.2;
+    },
+    siren() {
+      const t = now(), dur = 3;
+      const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = 850;
+      const l = ctx.createOscillator(); l.frequency.value = 1.6; const lg = ctx.createGain(); lg.gain.value = 300;
+      l.connect(lg).connect(o.frequency);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.1); g.gain.setValueAtTime(0.25, t + dur - 0.2); g.gain.linearRampToValueAtTime(0, t + dur);
+      o.connect(g).connect(sfxBus); o.start(t); l.start(t); o.stop(t + dur); l.stop(t + dur);
+      return dur;
+    },
+    whoosh() {
+      const t = now(), s = ctx.createBufferSource(); s.buffer = noiseBuf;
+      const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.Q.value = 2; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(5000, t + 0.6);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.6, t + 0.4); g.gain.linearRampToValueAtTime(0, t + 0.8);
+      s.connect(f).connect(g).connect(sfxBus); s.start(t); s.stop(t + 0.9);
+      return 0.9;
+    },
+    suspense() {
+      const t = now(), dur = 3.5;
+      [55, 58.3].forEach(f => tone(t, dur, f, { type: "sawtooth", peak: 0.18, attack: 1.5, release: 0.4, filter: 400 }));
+      [220, 233.1].forEach(f => tone(t + 0.5, dur - 0.5, f, { type: "triangle", peak: 0.08, attack: 1.5, release: 0.4 }));
+      return dur;
+    },
+    bingo() { SFX.fanfare(); setTimeout(() => SFX.applause(4), 900); return 5; },
+    lol() {
+      const t = now();
+      for (let i = 0; i < 5; i++) tone(t + i * 0.13, 0.11, 520 - i * 25, { type: "square", peak: 0.12, filter: 1800 });
+      return 0.8;
+    }
+  };
+  const BOARD = [
+    ["airhorn", "📯", "Airhorn"], ["badumtss", "🥁", "Ba dum tss"], ["fail", "🎺", "Fail"],
+    ["applause", "👏", "Applaus"], ["boo", "👎", "Boe!"], ["ooh", "😮", "Oooh"],
+    ["ding", "🔔", "Ding ding"], ["buzzer", "❌", "Fout!"], ["suspense", "😱", "Spanning"],
+    ["ticktock", "⏱️", "Aftellen"], ["siren", "🚨", "Sirene"], ["whoosh", "💨", "Whoosh"],
+    ["fanfare", "🎉", "Fanfare"], ["lol", "🤡", "Hahaha"], ["bingo", "🏆", "Winnaar"]
+  ];
+  function play(name) { audio(); return SFX[name](); }
+  const grid = $("sfxGrid");
+  BOARD.forEach(([k, e, label]) => {
+    const b = document.createElement("button"); b.className = "sfx";
+    b.innerHTML = `<span class="e">${e}</span>${label}`;
+    b.addEventListener("click", () => {
+      const d = play(k); b.classList.add("playing");
+      setTimeout(() => b.classList.remove("playing"), Math.min(d, 3) * 1000);
+    });
+    grid.appendChild(b);
+  });
+  $("sfxVol").addEventListener("input", e => { if (sfxBus) sfxBus.gain.value = +e.target.value; });
+
+  // ---------- Drumroll while wheel spins ----------
+  let rollTimer = null, rollStart = 0;
+  function startRoll() {
+    audio(); rollStart = now(); let next = now() + 0.05;
+    rollTimer = setInterval(() => {
+      while (next < now() + 0.2) {
+        const el = Math.min(1, (next - rollStart) / 4);
+        snare(next, 0.12 + 0.3 * el + Math.random() * 0.05);
+        next += 0.045;
+      }
+    }, 50);
+    $("spinBtn").classList.add("spinning"); $("spinBtn").textContent = "🛑 Stop (rad staat stil)";
+  }
+  function stopRoll() {
+    clearInterval(rollTimer); rollTimer = null;
+    const t = now() + 0.06; kick(t); crash(t, 0.4);
+    $("spinBtn").classList.remove("spinning"); $("spinBtn").textContent = "🥁 Rad draait";
+    spinCount++; maybeAutoSurprise();
+  }
+  let spinCount = 0;
+  $("spinBtn").addEventListener("click", () => rollTimer ? stopRoll() : startRoll());
+
+  // ---------- Overlay ----------
+  function showOverlay(emoji, title, text) {
+    $("ovEmoji").textContent = emoji; $("ovTitle").textContent = title; $("ovText").textContent = text;
+    $("overlay").classList.add("show");
+  }
+  $("ovClose").addEventListener("click", () => $("overlay").classList.remove("show"));
+
+  // ---------- Surprises ----------
+  const SURPRISES = [
+    ["🧍", "IEDEREEN STAAN!", "Wie als laatste staat krijgt een straf naar keuze van de bingomaster."],
+    ["🔄", "KAARTENRUIL!", "Iedereen geeft z'n bingokaart door naar links. Succes ermee."],
+    ["🥂", "PROOST!", "Iedereen neemt een slok van z'n drankje."],
+    ["🤫", "STILTERONDE", "Wie praat voor het volgende nummer valt, krijgt een straf."],
+    ["🎙️", "MOPPENTIJD", "De bingomaster wijst iemand aan die een mop moet vertellen. Slechte mop = boe-geroep."],
+    ["💐", "COMPLIMENTENRONDE", "Iedereen geeft z'n linkerbuur een compliment. Gemeend graag."],
+    ["🗣️", "ACCENT-RONDE", "Tot het volgende nummer praat iedereen met een accent naar keuze."],
+    ["🎡", "GASTDRAAIER", "De bingomaster kiest iemand die de volgende draai mag doen."],
+    ["✖️2", "DUBBELE PUNTEN", "Wie deze ronde wint krijgt dubbele punten!"],
+    ["🔢", "GRATIS NUMMER", "Iedereen mag één nummer naar keuze op z'n kaart afstrepen."],
+    ["🙃", "OMGEKEERDE WERELD", "Wie het meeste nummers heeft afgestreept moet z'n laatste nummer weer wissen."],
+    ["🕺", "DANSPAUZE", "10 seconden dansen! Wie niet meedoet krijgt een straf."],
+    ["🤝", "WISSEL VAN PLEK", "Iedereen gaat ergens anders zitten (kaart mag mee)."],
+    ["🎤", "ZANG-RONDE", "De bingomaster kiest iemand die het refrein van een liedje moet zingen."]
+  ];
+  let lastSurprise = -1;
+  function surprise() {
+    audio(); play("siren");
+    let i; do { i = Math.floor(Math.random() * SURPRISES.length); } while (i === lastSurprise && SURPRISES.length > 1);
+    lastSurprise = i;
+    setTimeout(() => { const [e, t, x] = SURPRISES[i]; play("airhorn"); showOverlay(e, t, x); }, 1500);
+  }
+  $("surpriseBtn").addEventListener("click", surprise);
+  function maybeAutoSurprise() {
+    if (!autoSurprise.checked) return;
+    if (Math.random() < 0.12) setTimeout(surprise, 900);
+  }
+
+  $("bingoBtn").addEventListener("click", () => { play("bingo"); showOverlay("🏆", "BINGO!", "Check de kaart! Klopt alles? Kies de winnaar bij Rondes."); });
+  $("falseBtn").addEventListener("click", () => { play("buzzer"); setTimeout(() => play("boo"), 900); showOverlay("🚨", "VALSE BINGO!", "Strafmoment! De groep bepaalt de straf."); });
+
+  // ---------- Microphone ----------
+  const FX = [["normaal", "Normaal"], ["gameshow", "Gameshow"], ["arena", "Arena"], ["diep", "Diep"], ["helium", "Helium"], ["robot", "Robot"], ["megafoon", "Megafoon"], ["echo", "Echo"]];
+  let fx = store.get("fx", "gameshow");
+  let micStream = null, micSrc = null, micGate = null, fxNodes = [], analyser = null, micReady = false, live = false;
+
+  function pitchShifter(ratio) {
+    const T = 0.12, sr = ctx.sampleRate, len = Math.round(T * sr);
+    const input = ctx.createGain(), output = ctx.createGain();
+    const D = Math.abs(1 - ratio) * T;
+    const ramp = ctx.createBuffer(1, len, sr), win = ctx.createBuffer(1, len, sr);
+    const r = ramp.getChannelData(0), w = win.getChannelData(0);
+    for (let i = 0; i < len; i++) { const p = i / len; r[i] = ratio < 1 ? p : 1 - p; w[i] = Math.pow(Math.sin(Math.PI * p), 2); }
+    const srcs = [], t0 = ctx.currentTime + 0.05;
+    [0, 0.5].forEach(off => {
+      const delay = ctx.createDelay(1); delay.delayTime.value = 0;
+      const rs = ctx.createBufferSource(); rs.buffer = ramp; rs.loop = true;
+      const rg = ctx.createGain(); rg.gain.value = D;
+      rs.connect(rg).connect(delay.delayTime);
+      const ws = ctx.createBufferSource(); ws.buffer = win; ws.loop = true;
+      const vca = ctx.createGain(); vca.gain.value = 0;
+      ws.connect(vca.gain);
+      input.connect(delay).connect(vca).connect(output);
+      rs.start(t0, off * T); ws.start(t0, off * T);
+      srcs.push(rs, ws);
+    });
+    return { input, output, stop() { srcs.forEach(s => { try { s.stop(); } catch {} }); } };
+  }
+  function shaper(amount) {
+    const s = ctx.createWaveShaper(), c = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; c[i] = Math.tanh(amount * x); }
+    s.curve = c; return s;
+  }
+  function reverb(wet) { const c = ctx.createConvolver(); c.buffer = reverbBuf; const g = ctx.createGain(); g.gain.value = wet; c.connect(g); return { input: c, output: g }; }
+
+  function buildFx() {
+    if (!micSrc) return;
+    micSrc.disconnect();
+    fxNodes.forEach(n => { try { n.stop ? n.stop() : null; } catch {} });
+    fxNodes.forEach(n => { try { (n.output || n).disconnect(); } catch {} });
+    fxNodes = [];
+    const inp = ctx.createGain(); micSrc.connect(inp); micSrc.connect(analyser); fxNodes.push(inp);
+    const out = micGate;
+    const keep = (n) => { fxNodes.push(n); return n; };
+    switch (fx) {
+      case "gameshow": { const p = keep(pitchShifter(0.84)); inp.connect(p.input); p.output.connect(out); const r = keep(reverb(0.35)); p.output.connect(r.input); r.output.connect(out); break; }
+      case "arena": { inp.connect(out); const r = keep(reverb(0.7)); inp.connect(r.input); r.output.connect(out); break; }
+      case "diep": { const p = keep(pitchShifter(0.68)); inp.connect(p.input); p.output.connect(out); break; }
+      case "helium": { const p = keep(pitchShifter(1.65)); inp.connect(p.input); p.output.connect(out); break; }
+      case "robot": {
+        const rm = keep(ctx.createGain()); rm.gain.value = 0;
+        const o = ctx.createOscillator(); o.frequency.value = 55; o.connect(rm.gain); o.start(); keep({ stop: () => o.stop(), output: o });
+        const d = keep(ctx.createDelay(0.1)); d.delayTime.value = 0.011; const fb = keep(ctx.createGain()); fb.gain.value = 0.55;
+        inp.connect(rm); rm.connect(out); rm.connect(d); d.connect(fb).connect(d); d.connect(out);
+        break;
+      }
+      case "megafoon": {
+        const hp = keep(ctx.createBiquadFilter()); hp.type = "highpass"; hp.frequency.value = 700;
+        const lp = keep(ctx.createBiquadFilter()); lp.type = "lowpass"; lp.frequency.value = 3200;
+        const sh = keep(shaper(12)); const g = keep(ctx.createGain()); g.gain.value = 0.45;
+        inp.connect(hp).connect(sh).connect(lp).connect(g).connect(out); break;
+      }
+      case "echo": {
+        inp.connect(out);
+        const d = keep(ctx.createDelay(1)); d.delayTime.value = 0.32; const fb = keep(ctx.createGain()); fb.gain.value = 0.42;
+        const lp = keep(ctx.createBiquadFilter()); lp.type = "lowpass"; lp.frequency.value = 2500;
+        inp.connect(d); d.connect(lp).connect(fb).connect(d); lp.connect(out); break;
+      }
+      default: inp.connect(out);
+    }
+  }
+
+  function renderFxChips() {
+    const wrap = $("fxChips"); wrap.innerHTML = "";
+    FX.forEach(([k, label]) => {
+      const c = document.createElement("button"); c.className = "chip" + (k === fx ? " on" : ""); c.textContent = label;
+      c.addEventListener("click", () => { fx = k; store.set("fx", fx); renderFxChips(); buildFx(); });
+      wrap.appendChild(c);
+    });
+  }
+  renderFxChips();
+
+  async function initMic() {
+    audio();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("unsupported");
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
+    micSrc = ctx.createMediaStreamSource(micStream);
+    micGate = ctx.createGain(); micGate.gain.value = 0; micGate.connect(micBus);
+    analyser = ctx.createAnalyser(); analyser.fftSize = 512;
+    buildFx(); micReady = true; meterLoop();
+  }
+  function setLive(on) {
+    if (!micReady) return;
+    live = on; micGate.gain.setTargetAtTime(on ? 1 : 0, now(), 0.02);
+    $("micBtn").classList.toggle("live", on);
+    $("micHint").textContent = on ? "🔴 LIVE" : ($("lockMic").checked ? "Tik om live te gaan" : "Hou ingedrukt om te praten");
+  }
+  function meterLoop() {
+    const data = new Uint8Array(analyser.fftSize);
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+      let peak = 0; for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
+      $("meterBar").style.width = Math.min(100, (peak / 128) * 160 * (live ? 1 : 0.35)) + "%";
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+  function micError(e) {
+    const note = $("micNote"); note.classList.add("show");
+    note.textContent = "De microfoon is hier geblokkeerd. Open de app via de losse link (zie chat) zodat de browser om microfoon-toestemming kan vragen. De rest van de app werkt gewoon.";
+    $("micHint").textContent = "Microfoon niet beschikbaar";
+  }
+  const micBtn = $("micBtn");
+  micBtn.addEventListener("pointerdown", async (e) => {
+    e.preventDefault();
+    if (!micReady) {
+      try { await initMic(); micBtn.classList.remove("off"); $("micHint").textContent = $("lockMic").checked ? "Tik om live te gaan" : "Hou ingedrukt om te praten"; }
+      catch (err) { micError(err); }
+      return;
+    }
+    if ($("lockMic").checked) setLive(!live); else setLive(true);
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach(ev => micBtn.addEventListener(ev, () => { if (micReady && !$("lockMic").checked) setLive(false); }));
+  micBtn.addEventListener("contextmenu", e => e.preventDefault());
+  $("lockMic").addEventListener("change", () => { if (micReady) setLive(false); });
+  $("micVol").addEventListener("input", e => { if (micBus) micBus.gain.value = +e.target.value; });
+
+  // ---------- Rounds ----------
+  const DEFAULT_ROUNDS = ["1 rij", "2 rijen", "4 hoeken", "Letter X", "Letter T", "Buitenrand", "Letter L", "3 rijen", "Volle kaart (dubbele punten!)"];
+  let rounds = store.get("rounds", DEFAULT_ROUNDS.map(p => ({ pattern: p, winner: "" })));
+  let current = store.get("current", 0);
+  let players = store.get("players", []);
+  let bonus = store.get("bonus", {}); // manual +/- adjustments per player
+
+  function save() { store.set("rounds", rounds); store.set("current", current); store.set("players", players); store.set("bonus", bonus); }
+  function scoreOf(name) {
+    let s = bonus[name] || 0;
+    rounds.forEach((r, i) => { if (r.winner === name) s += (i === rounds.length - 1 ? 2 : 1); });
+    return s;
+  }
+  function renderRounds() {
+    const list = $("roundList"); list.innerHTML = "";
+    rounds.forEach((r, i) => {
+      const el = document.createElement("div");
+      el.className = "round" + (i === current ? " current" : "") + (r.winner && i !== current ? " done" : "");
+      const opts = ['<option value="">Winnaar…</option>'].concat(players.map(p => `<option ${r.winner === p ? "selected" : ""}>${escapeHtml(p)}</option>`)).join("");
+      el.innerHTML = `<div class="n">${i + 1}</div><input value="${escapeHtml(r.pattern)}"><select>${opts}</select>`;
+      el.querySelector("input").addEventListener("change", e => { r.pattern = e.target.value; save(); renderPill(); });
+      el.querySelector("select").addEventListener("change", e => { r.winner = e.target.value; save(); renderPlayers(); if (r.winner) play("ding"); });
+      el.querySelector(".n").addEventListener("click", () => { current = i; save(); renderRounds(); renderPill(); });
+      list.appendChild(el);
+    });
+    renderPill();
+  }
+  function renderPill() { $("roundPill").textContent = `Ronde ${current + 1}/${rounds.length}: ${rounds[current].pattern}`; }
+  $("nextRound").addEventListener("click", () => {
+    if (current < rounds.length - 1) {
+      current++; save(); renderRounds();
+      play("fanfare");
+      const last = current === rounds.length - 1;
+      showOverlay(last ? "🔥" : "🎯", `RONDE ${current + 1}${last ? ": FINALE" : ""}`, `Patroon: ${rounds[current].pattern}`);
+    } else { showWinner(); }
+  });
+  $("prevRound").addEventListener("click", () => { if (current > 0) { current--; save(); renderRounds(); } });
+
+  // ---------- Players ----------
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  function renderPlayers() {
+    const list = $("playerList"); list.innerHTML = "";
+    if (!players.length) list.innerHTML = '<p class="muted">Nog geen spelers. Voeg ze hieronder toe.</p>';
+    const sorted = [...players].sort((a, b) => scoreOf(b) - scoreOf(a));
+    const top = sorted.length ? scoreOf(sorted[0]) : 0;
+    sorted.forEach(p => {
+      const el = document.createElement("div"); el.className = "player";
+      const s = scoreOf(p);
+      el.innerHTML = `<span class="name">${s > 0 && s === top ? "👑 " : ""}${escapeHtml(p)}</span>
+        <button class="btn small minus">−</button><span class="pts">${s}</span><button class="btn small plus">+</button><button class="del">✕</button>`;
+      el.querySelector(".plus").addEventListener("click", () => { bonus[p] = (bonus[p] || 0) + 1; save(); renderPlayers(); play("ding"); });
+      el.querySelector(".minus").addEventListener("click", () => { bonus[p] = (bonus[p] || 0) - 1; save(); renderPlayers(); play("buzzer"); });
+      el.querySelector(".del").addEventListener("click", () => {
+        if (el.dataset.confirm) { players = players.filter(x => x !== p); rounds.forEach(r => { if (r.winner === p) r.winner = ""; }); delete bonus[p]; save(); renderPlayers(); renderRounds(); }
+        else { el.dataset.confirm = "1"; el.querySelector(".del").textContent = "Zeker?"; }
+      });
+      list.appendChild(el);
+    });
+  }
+  function addPlayer() {
+    const v = $("newPlayer").value.trim();
+    if (v && !players.includes(v)) { players.push(v); save(); renderPlayers(); renderRounds(); }
+    $("newPlayer").value = "";
+  }
+  $("addPlayer").addEventListener("click", addPlayer);
+  $("newPlayer").addEventListener("keydown", e => { if (e.key === "Enter") addPlayer(); });
+
+  function showWinner() {
+    if (!players.length) return;
+    const top = Math.max(...players.map(scoreOf)); const w = players.filter(p => scoreOf(p) === top);
+    play("suspense");
+    setTimeout(() => { play("bingo"); showOverlay("👑", "DE KAMPIOEN", `${w.join(" & ")} met ${top} punt${top === 1 ? "" : "en"}!`); }, 3000);
+  }
+  function showLoser() {
+    if (!players.length) return;
+    const low = Math.min(...players.map(scoreOf)); const l = players.filter(p => scoreOf(p) === low);
+    play("suspense");
+    setTimeout(() => { play("fail"); showOverlay("🐩", "DE POEDELPRIJS", `gaat naar... ${l.join(" & ")}! (${low} punt${low === 1 ? "" : "en"})`); }, 3000);
+  }
+  $("showWinner").addEventListener("click", showWinner);
+  $("showLoser").addEventListener("click", showLoser);
+  $("resetAll").addEventListener("click", (e) => {
+    const b = e.currentTarget;
+    if (!b.dataset.confirm) { b.dataset.confirm = "1"; b.textContent = "Echt alles wissen? Tik nog een keer"; return; }
+    rounds = DEFAULT_ROUNDS.map(p => ({ pattern: p, winner: "" })); current = 0; players = []; bonus = {};
+    save(); renderRounds(); renderPlayers(); b.dataset.confirm = ""; b.textContent = "Alles resetten";
+  });
+
+  // ---------- Nicknames ----------
+  const NICKS = {
+    1: "De eenzame wolf", 2: "Een setje", 3: "Driemaal is scheepsrecht", 4: "Klavertje vier", 5: "High five",
+    6: "Halfje dozijn", 7: "Het geluksgetal", 8: "Achtbaan", 9: "Net geen tien", 10: "Een dikke voldoende",
+    11: "Twee stokjes", 12: "Een dozijn", 13: "Ongeluksnummer", 14: "Valentijnsdag", 15: "Nog zo jong",
+    16: "Scooterleeftijd", 17: "Rijlessen beginnen", 18: "Eindelijk legaal", 19: "Laatste tienerjaar", 20: "Twee tientjes",
+    21: "Blackjack", 22: "Twee eendjes", 23: "De dwarsligger", 24: "Dag en nacht", 25: "Een kwartje",
+    26: "Het hele alfabet", 27: "Schuin en scheef", 28: "Februari", 29: "Schrikkeldag", 30: "Dirty thirty",
+    31: "Oudejaarsavond", 32: "Alle tanden nog", 33: "Dubbel drie", 34: "Ben je er klaar voor", 35: "Halverwege de zeventig",
+    36: "Zes keer zes", 37: "Lichaamstemperatuur", 38: "Koorts!", 39: "Bijna veertig", 40: "Midlifecrisis",
+    41: "Net over de heuvel", 42: "Het antwoord op alles", 43: "Rondje van de zaak", 44: "Twee stoeltjes", 45: "Rust! Eerste helft klaar",
+    46: "Wie heeft hem?", 47: "Bijna Abraham", 48: "Twee dagen lang", 49: "Laatste kans voor Abraham", 50: "Abraham gezien",
+    51: "Net over de helft", 52: "Een pak kaarten", 53: "Streep maar af", 54: "Oei oei oei", 55: "Dubbele high five",
+    56: "Komt ie", 57: "Kijk goed", 58: "Daar gaan we", 59: "Bijna een uur", 60: "Een vol uur",
+    61: "Net te laat", 62: "Lekker nummer", 63: "Wie o wie", 64: "Het schaakbord", 65: "Eindelijk pensioen",
+    66: "Route 66", 67: "SIX SEVEN!", 68: "Bijna nice", 69: "Nice", 70: "Nog steeds fit",
+    71: "Oei, daar is ie", 72: "Drie dagen wakker", 73: "Kom maar op", 74: "Je weet het", 75: "Driekwart eeuw",
+    76: "Spannend hoor", 77: "Twee vlaggetjes", 78: "Wie roept er bingo?", 79: "Bijna tachtig", 80: "Oma's leeftijd",
+    81: "Negen keer negen", 82: "Hou je vast", 83: "Bijna klaar", 84: "Nog even", 85: "Laat maar zien",
+    86: "Wegwezen", 87: "Bijna daar", 88: "Twee sneeuwpoppen", 89: "Bijna het einde", 90: "Het einde van de lijn"
+  };
+  function renderNickBig(n) {
+    const box = $("nickBig");
+    if (!n || !NICKS[n]) { box.innerHTML = '<p class="muted" style="padding-top:30px">Typ het nummer van het rad, dan zie je de bijnaam groot.</p>'; return; }
+    box.innerHTML = `<div class="num">${n}</div><div class="nick">${escapeHtml(NICKS[n])}</div>`;
+  }
+  $("nickSearch").addEventListener("input", e => renderNickBig(parseInt(e.target.value, 10)));
+  const nl = $("nickList");
+  Object.entries(NICKS).forEach(([n, t]) => {
+    const el = document.createElement("div"); el.className = "nick-item";
+    el.innerHTML = `<b>${n}</b><span>${escapeHtml(t)}</span>`; nl.appendChild(el);
+  });
+  renderNickBig();
+
+  // ---------- Auto-surprise toggle (injected into show tab) ----------
+  const autoWrap = document.createElement("label"); autoWrap.className = "toggle"; autoWrap.style.margin = "4px 2px 0";
+  autoWrap.innerHTML = '<input type="checkbox" id="autoSurprise"> Af en toe automatisch een verrassing na het stoppen van het rad';
+  document.querySelector("#tab-show .big-actions").after(autoWrap);
+  const autoSurprise = $("autoSurprise");
+  autoSurprise.checked = store.get("auto", true);
+  autoSurprise.addEventListener("change", () => store.set("auto", autoSurprise.checked));
+
+  // ---------- Tabs ----------
+  document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach(x => x.classList.toggle("active", x === b));
+    document.querySelectorAll("section.tab").forEach(s => s.classList.toggle("active", s.id === "tab-" + b.dataset.tab));
+    window.scrollTo(0, 0);
+  }));
+
+  renderRounds(); renderPlayers();
+})();
+</script>
+</body>
+</html>
