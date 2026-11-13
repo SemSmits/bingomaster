@@ -89,6 +89,9 @@
   nav button { flex: 1; background: transparent; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; font-weight: 600; padding: 4px 0; }
   nav button .e { font-size: 22px; }
   nav button.active { color: var(--gold); }
+  #slotSheet { position: fixed; inset: 0; background: rgba(10,4,20,.8); display: none; align-items: flex-end; justify-content: center; z-index: 60; }
+  #slotSheet.show { display: flex; }
+  .sheet-box { background: var(--panel); width: 100%; max-width: 640px; border-radius: 20px 20px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
   .note { background: #3a1430; border-left: 4px solid var(--pink); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.4; display: none; margin-top: 8px; }
   .note.show { display: block; }
 </style>
@@ -128,6 +131,9 @@
 
     <h2>Soundboard</h2>
     <div class="grid" id="sfxGrid"></div>
+    <button class="btn" id="editSounds" style="width:100%;margin-top:10px">✏️ Eigen geluiden instellen</button>
+    <p class="muted" id="editHelp" style="display:none">Tik op een knop om er een echt geluid aan te koppelen (mp3/wav/m4a van je telefoon). Knoppen met ⭐ gebruiken al je eigen geluid. Onderaan staan ook de drumroll en de klap van het rad. Je geluiden blijven bewaard op deze telefoon.</p>
+    <input type="file" id="slotFile" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac" style="display:none">
 
     <div style="margin-top:14px">
       <div class="muted">Volume geluidseffecten</div>
@@ -184,6 +190,16 @@
   <button data-tab="score"><span class="e">🏆</span>Score</button>
   <button data-tab="nicks"><span class="e">🔢</span>Bijnamen</button>
 </nav>
+
+<div id="slotSheet"><div class="sheet-box">
+  <div class="ov-title" id="slotTitle" style="font-size:22px"></div>
+  <input class="text" id="slotLabel" placeholder="Naam van de knop" style="margin-bottom:10px">
+  <p class="muted" id="slotInfo"></p>
+  <button class="btn gold" id="slotPick" style="width:100%;margin-bottom:8px">📂 Kies geluidsbestand</button>
+  <button class="btn" id="slotTest" style="width:100%;margin-bottom:8px">▶️ Test</button>
+  <button class="btn" id="slotReset" style="width:100%;margin-bottom:8px"></button>
+  <button class="btn" id="slotCancel" style="width:100%">Sluiten</button>
+</div></div>
 
 <div id="overlay"><div class="ov-box">
   <div class="ov-emoji" id="ovEmoji"></div>
@@ -396,24 +412,153 @@
     ["ticktock", "⏱️", "Aftellen"], ["siren", "🚨", "Sirene"], ["whoosh", "💨", "Whoosh"],
     ["fanfare", "🎉", "Fanfare"], ["lol", "🤡", "Hahaha"], ["bingo", "🏆", "Winnaar"]
   ];
-  function play(name) { audio(); return SFX[name](); }
+  // Extra slots that are not on the board but can get a custom sound
+  const HIDDEN_SLOTS = [["drumroll", "🥁", "Drumroll (rad draait)"], ["crash", "💥", "Rad stopt (klap)"]];
+  SFX.crash = () => { const t = now() + 0.02; kick(t); crash(t, 0.4); return 2; };
+
+  // ---------- Custom sounds (IndexedDB) ----------
+  const db = {
+    _db: null,
+    open() {
+      if (this._db) return Promise.resolve(this._db);
+      return new Promise((res, rej) => {
+        try {
+          const r = indexedDB.open("bingomaster", 1);
+          r.onupgradeneeded = () => r.result.createObjectStore("sounds");
+          r.onsuccess = () => { this._db = r.result; res(this._db); };
+          r.onerror = () => rej(r.error);
+        } catch (e) { rej(e); }
+      });
+    },
+    async op(mode, fn) {
+      const d = await this.open();
+      return new Promise((res, rej) => { const tx = d.transaction("sounds", mode); const r = fn(tx.objectStore("sounds")); tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); });
+    },
+    put(k, v) { return this.op("readwrite", s => s.put(v, k)); },
+    del(k) { return this.op("readwrite", s => s.delete(k)); },
+    async all() {
+      const d = await this.open();
+      return new Promise((res, rej) => {
+        const out = {}; const tx = d.transaction("sounds", "readonly"); const c = tx.objectStore("sounds").openCursor();
+        c.onsuccess = () => { const cur = c.result; if (cur) { out[cur.key] = cur.value; cur.continue(); } };
+        tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error);
+      });
+    }
+  };
+  const custom = {};   // key -> { name, label?, emoji?, blob }
+  const buffers = {};  // key -> AudioBuffer
+  async function decode(key) {
+    audio();
+    const ab = await custom[key].blob.arrayBuffer();
+    buffers[key] = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+  }
+  function playBuffer(buf, { loop = false } = {}) {
+    const s = ctx.createBufferSource(); s.buffer = buf; s.loop = loop; s.connect(sfxBus); s.start(); return s;
+  }
+  function play(name) {
+    audio();
+    if (buffers[name]) { playBuffer(buffers[name]); return buffers[name].duration; }
+    return SFX[name] ? SFX[name]() : 0;
+  }
+
+  let editMode = false;
   const grid = $("sfxGrid");
-  BOARD.forEach(([k, e, label]) => {
-    const b = document.createElement("button"); b.className = "sfx";
-    b.innerHTML = `<span class="e">${e}</span>${label}`;
-    b.addEventListener("click", () => {
-      const d = play(k); b.classList.add("playing");
-      setTimeout(() => b.classList.remove("playing"), Math.min(d, 3) * 1000);
+  function boardItems() {
+    const extra = Object.entries(custom).filter(([k]) => k.startsWith("extra_")).map(([k, v]) => [k, v.emoji || "🔊", v.label || "Eigen"]);
+    return BOARD.concat(extra).concat(editMode ? HIDDEN_SLOTS : []);
+  }
+  function renderBoard() {
+    grid.innerHTML = "";
+    boardItems().forEach(([k, e, label]) => {
+      const b = document.createElement("button"); b.className = "sfx";
+      const mark = custom[k] && !k.startsWith("extra_") ? " ⭐" : "";
+      b.innerHTML = `<span class="e">${e}</span>${escapeHtml(label)}${mark}`;
+      if (editMode) b.style.outline = "2px dashed var(--gold)";
+      b.addEventListener("click", () => {
+        if (editMode) return openSlot(k, label);
+        const d = play(k); b.classList.add("playing");
+        setTimeout(() => b.classList.remove("playing"), Math.min(d, 3) * 1000);
+      });
+      grid.appendChild(b);
     });
-    grid.appendChild(b);
+    if (editMode) {
+      const add = document.createElement("button"); add.className = "sfx"; add.style.outline = "2px dashed var(--cyan)";
+      add.innerHTML = '<span class="e">➕</span>Nieuw geluid';
+      add.addEventListener("click", () => openSlot("extra_" + Date.now(), "", true));
+      grid.appendChild(add);
+    }
+  }
+  $("editSounds").addEventListener("click", () => {
+    editMode = !editMode;
+    $("editSounds").textContent = editMode ? "✅ Klaar met aanpassen" : "✏️ Eigen geluiden instellen";
+    $("editHelp").style.display = editMode ? "block" : "none";
+    renderBoard();
   });
+
+  // Slot editor sheet
+  let slotKey = null, slotIsNew = false;
+  function openSlot(key, label, isNew = false) {
+    slotKey = key; slotIsNew = isNew;
+    const c = custom[key];
+    $("slotTitle").textContent = isNew ? "Nieuw geluid" : label;
+    $("slotLabel").style.display = key.startsWith("extra_") ? "block" : "none";
+    $("slotLabel").value = c && c.label ? c.label : "";
+    $("slotInfo").textContent = c ? `Nu: ${c.name}` : (isNew ? "Kies een geluidsbestand van je telefoon." : "Nu: standaard (nep) geluid");
+    $("slotReset").style.display = c ? "block" : "none";
+    $("slotReset").textContent = key.startsWith("extra_") ? "🗑️ Verwijderen" : "↩️ Terug naar standaard";
+    $("slotTest").style.display = isNew ? "none" : "block";
+    $("slotSheet").classList.add("show");
+  }
+  function closeSlot() { $("slotSheet").classList.remove("show"); slotKey = null; }
+  $("slotCancel").addEventListener("click", closeSlot);
+  $("slotTest").addEventListener("click", () => { if (slotKey) play(slotKey); });
+  $("slotPick").addEventListener("click", () => { const f = $("slotFile"); f.value = ""; f.click(); });
+  $("slotFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0]; if (!file || !slotKey) return;
+    const key = slotKey;
+    const label = key.startsWith("extra_") ? ($("slotLabel").value.trim() || file.name.replace(/\.[^.]+$/, "").slice(0, 18)) : undefined;
+    const prev = custom[key];
+    custom[key] = { name: file.name, blob: file, label, emoji: "🔊" };
+    try {
+      await decode(key);
+      await db.put(key, { name: file.name, blob: file, label, emoji: "🔊" }).catch(() => {});
+      $("slotInfo").textContent = `Nu: ${file.name}`;
+      play(key);
+      renderBoard(); closeSlot();
+    } catch (err) {
+      if (prev) custom[key] = prev; else delete custom[key];
+      $("slotInfo").textContent = "Dit bestand kan ik niet afspelen. Probeer een mp3, wav of m4a.";
+    }
+  });
+  $("slotLabel").addEventListener("change", async () => {
+    const c = custom[slotKey]; if (!c) return;
+    c.label = $("slotLabel").value.trim() || c.label;
+    await db.put(slotKey, c).catch(() => {}); renderBoard();
+  });
+  $("slotReset").addEventListener("click", async () => {
+    const key = slotKey; delete custom[key]; delete buffers[key];
+    await db.del(key).catch(() => {}); renderBoard(); closeSlot();
+  });
+
+  (async () => {
+    try {
+      const all = await db.all();
+      Object.assign(custom, all);
+      for (const k of Object.keys(all)) { try { await decode(k); } catch {} }
+    } catch {}
+    renderBoard();
+  })();
+  renderBoard();
   $("sfxVol").addEventListener("input", e => { if (sfxBus) sfxBus.gain.value = +e.target.value; });
 
   // ---------- Drumroll while wheel spins ----------
-  let rollTimer = null, rollStart = 0;
+  let rollTimer = null, rollStart = 0, rollSrc = null;
   function startRoll() {
     audio(); rollStart = now(); let next = now() + 0.05;
-    rollTimer = setInterval(() => {
+    if (buffers.drumroll) {
+      rollSrc = playBuffer(buffers.drumroll, { loop: true });
+      rollTimer = -1;
+    } else rollTimer = setInterval(() => {
       while (next < now() + 0.2) {
         const el = Math.min(1, (next - rollStart) / 4);
         snare(next, 0.12 + 0.3 * el + Math.random() * 0.05);
@@ -424,7 +569,8 @@
   }
   function stopRoll() {
     clearInterval(rollTimer); rollTimer = null;
-    const t = now() + 0.06; kick(t); crash(t, 0.4);
+    if (rollSrc) { try { rollSrc.stop(); } catch {} rollSrc = null; }
+    play("crash");
     $("spinBtn").classList.remove("spinning"); $("spinBtn").textContent = "🥁 Rad draait";
     spinCount++; maybeAutoSurprise();
   }
