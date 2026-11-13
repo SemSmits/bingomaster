@@ -133,6 +133,9 @@
     <div class="grid" id="sfxGrid"></div>
     <button class="btn" id="editSounds" style="width:100%;margin-top:10px">✏️ Eigen geluiden instellen</button>
     <p class="muted" id="editHelp" style="display:none">Tik op een knop om er een echt geluid aan te koppelen (mp3/wav/m4a van je telefoon). Knoppen met ⭐ gebruiken al je eigen geluid. Onderaan staan ook de drumroll en de klap van het rad. Je geluiden blijven bewaard op deze telefoon.</p>
+    <h2>Memes</h2>
+    <div class="grid" id="memeGrid"></div>
+    <p class="muted">Meme-geluiden komen van github.com/3kh0/soundboard, dus je hebt internet nodig.</p>
     <input type="file" id="slotFile" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac" style="display:none">
 
     <div style="margin-top:14px">
@@ -398,7 +401,7 @@
       [220, 233.1].forEach(f => tone(t + 0.5, dur - 0.5, f, { type: "triangle", peak: 0.08, attack: 1.5, release: 0.4 }));
       return dur;
     },
-    bingo() { SFX.fanfare(); setTimeout(() => SFX.applause(4), 900); return 5; },
+    bingo() { play("fanfare"); setTimeout(() => play("applause"), 900); return 5; },
     lol() {
       const t = now();
       for (let i = 0; i < 5; i++) tone(t + i * 0.13, 0.11, 520 - i * 25, { type: "square", peak: 0.12, filter: 1800 });
@@ -406,14 +409,14 @@
     }
   };
   const BOARD = [
-    ["airhorn", "📯", "Airhorn"], ["badumtss", "🥁", "Ba dum tss"], ["fail", "🎺", "Fail"],
-    ["applause", "👏", "Applaus"], ["boo", "👎", "Boe!"], ["ooh", "😮", "Oooh"],
-    ["ding", "🔔", "Ding ding"], ["buzzer", "❌", "Fout!"], ["suspense", "😱", "Spanning"],
-    ["ticktock", "⏱️", "Aftellen"], ["siren", "🚨", "Sirene"], ["whoosh", "💨", "Whoosh"],
-    ["fanfare", "🎉", "Fanfare"], ["lol", "🤡", "Hahaha"], ["bingo", "🏆", "Winnaar"]
+    ["airhorn", "📯", "Airhorn"], ["badumtss", "🥁", "Ba dum tss"], ["fail", "🎻", "Zielig"],
+    ["applause", "🥳", "Yay!"], ["boo", "😩", "Awww"], ["ooh", "😮", "OHHH"],
+    ["ding", "🔔", "Bel"], ["buzzer", "❌", "Fout!"], ["suspense", "😱", "Dun dun"],
+    ["ticktock", "⏱️", "Aftellen"], ["siren", "🚨", "Alarm"], ["crash", "💥", "Boom"],
+    ["fanfare", "🎉", "Fanfare"], ["lol", "🤓", "Nerd lach"], ["bingo", "🏆", "Winnaar"]
   ];
   // Extra slots that are not on the board but can get a custom sound
-  const HIDDEN_SLOTS = [["drumroll", "🥁", "Drumroll (rad draait)"], ["crash", "💥", "Rad stopt (klap)"]];
+  const HIDDEN_SLOTS = [["drumroll", "🥁", "Drumroll (rad draait)"]];
   SFX.crash = () => { const t = now() + 0.02; kick(t); crash(t, 0.4); return 2; };
 
   // ---------- Custom sounds (IndexedDB) ----------
@@ -455,9 +458,64 @@
   function playBuffer(buf, { loop = false } = {}) {
     const s = ctx.createBufferSource(); s.buffer = buf; s.loop = loop; s.connect(sfxBus); s.start(); return s;
   }
+  // ---------- Classic meme sounds, streamed from github.com/3kh0/soundboard ----------
+  const SB_URLS = ["https://raw.githubusercontent.com/3kh0/soundboard/main/sounds/", "https://cdn.jsdelivr.net/gh/3kh0/soundboard@main/sounds/"];
+  // Board keys that get a real sound instead of the synth version
+  const REMOTE_DEFAULTS = {
+    airhorn: "airhorn", badumtss: "badumtss", fail: "sad-violin", applause: "kidsyay", boo: "wii-sports-aww",
+    ooh: "OHHH", ding: "boxingbell", buzzer: "wrong", suspense: "DUN_DUN", siren: "danger-alarm",
+    crash: "vine-boom", fanfare: "fanfend", lol: "nerdlaugh"
+  };
+  const MEMES = [
+    ["vine-boom", "💥", "Vine boom"], ["bruh", "😐", "Bruh"], ["emotional-damage", "💔", "Emotional damage"],
+    ["fbi-open-up", "🚔", "FBI open up"], ["nice", "👌", "Nice"], ["oh-baby-a-triple", "🔥", "Oh baby a triple"],
+    ["to-be-continued", "⏸️", "To be continued"], ["gta5-wasted", "💀", "Wasted"], ["metalpipe", "🔩", "Metal pipe"],
+    ["bonk", "🔨", "Bonk"], ["sike", "😜", "Sike"], ["run", "🏃", "Run"],
+    ["waitwhat", "🤨", "Wait what"], ["whatthehell", "😳", "What the hell"], ["hello-there", "👋", "Hello there"],
+    ["yeet", "🚀", "Yeet"], ["oof", "🤕", "Oof"], ["mario", "🍄", "Mario"],
+    ["coffin-dance", "⚰️", "Coffin dance"], ["x-games-mode", "😎", "X games"], ["afewmomentslater", "⏳", "Moments later"],
+    ["lethimcook", "👨‍🍳", "Let him cook"], ["stop-the-cap", "🧢", "Stop the cap"], ["damnwheredidyoufindthis", "🎶", "Waar vond je dit"],
+    ["ohnoohnoohnonono", "😱", "Oh no no no"], ["sui", "⚽", "SIUUU"], ["skull-trumpet", "💀", "Skull trumpet"],
+    ["hit-marker", "🎯", "Hitmarker"], ["AUUGHHH", "😫", "AUUGHHH"], ["mc-anvil", "⛏️", "Aambeeld"],
+    ["fatality", "🩸", "Fatality"], ["reportedbody", "🔪", "Dead body"], ["bazinga", "🤓", "Bazinga"],
+    ["hehehe", "😏", "Hehehe"], ["9+10=21", "🧮", "9+10=21"], ["rick-roll", "🕺", "Rickroll"],
+    ["wiimusic", "🎵", "Wii muziek"], ["sad_song", "🎻", "Zielig liedje"], ["kidsyay", "🥳", "Yay!"]
+  ];
+  const remote = {};    // file -> AudioBuffer
+  const loading = {};   // file -> Promise
+  function loadRemote(file) {
+    if (remote[file]) return Promise.resolve(remote[file]);
+    if (loading[file]) return loading[file];
+    audio();
+    loading[file] = (async () => {
+      for (const base of SB_URLS) {
+        try {
+          const r = await fetch(base + encodeURIComponent(file) + ".mp3");
+          if (!r.ok) continue;
+          const ab = await r.arrayBuffer();
+          remote[file] = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+          return remote[file];
+        } catch {}
+      }
+      delete loading[file];
+      return null;
+    })();
+    return loading[file];
+  }
+  let preloaded = false;
+  function preloadRemote() {
+    if (preloaded) return; preloaded = true;
+    const files = [...new Set(Object.values(REMOTE_DEFAULTS).concat(MEMES.map(m => m[0])))];
+    (async () => { for (const f of files) await loadRemote(f); })();
+  }
+  document.addEventListener("pointerdown", preloadRemote, { once: true, capture: true });
+
   function play(name) {
     audio();
     if (buffers[name]) { playBuffer(buffers[name]); return buffers[name].duration; }
+    const rf = REMOTE_DEFAULTS[name] || (name.startsWith("meme_") ? name.slice(5) : null);
+    if (rf && remote[rf]) { playBuffer(remote[rf]); return remote[rf].duration; }
+    if (rf && !SFX[name]) { loadRemote(rf).then(b => b && playBuffer(b)); return 1; }
     return SFX[name] ? SFX[name]() : 0;
   }
 
@@ -538,6 +596,20 @@
   $("slotReset").addEventListener("click", async () => {
     const key = slotKey; delete custom[key]; delete buffers[key];
     await db.del(key).catch(() => {}); renderBoard(); closeSlot();
+  });
+
+  // Meme board
+  const memeGrid = $("memeGrid");
+  MEMES.forEach(([file, e, label]) => {
+    const b = document.createElement("button"); b.className = "sfx";
+    b.innerHTML = `<span class="e">${e}</span>${escapeHtml(label)}`;
+    b.addEventListener("click", async () => {
+      audio(); b.classList.add("playing");
+      const buf = await loadRemote(file);
+      if (buf) { playBuffer(buf); setTimeout(() => b.classList.remove("playing"), Math.min(buf.duration, 3) * 1000); }
+      else { b.classList.remove("playing"); b.style.opacity = .4; }
+    });
+    memeGrid.appendChild(b);
   });
 
   (async () => {
