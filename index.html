@@ -116,7 +116,7 @@
     <button class="btn small" id="introSetup" style="width:100%;margin:-4px 0 12px;background:transparent;color:var(--muted)">⚙️ Opkomst instellen</button>
     <div class="card mic-wrap">
       <button id="micBtn" class="off" aria-label="Microfoon">🎤</button>
-      <div class="mic-hint" id="micHint">Tik om de microfoon aan te zetten</div>
+      <div class="mic-hint" id="micHint">Hou ingedrukt om te praten</div>
       <div class="meter"><div id="meterBar"></div></div>
       <div class="chips" id="fxChips"></div>
       <div class="row" style="width:100%">
@@ -816,18 +816,39 @@
   }
   renderFxChips();
 
-  async function initMic() {
+  // The mic is only held while talking. While a phone holds the mic, iOS/Android switch to
+  // "call mode" and may route all audio away from the Bluetooth speaker, so we release it
+  // shortly after the button is let go.
+  let releaseTimer = null, pressed = false;
+  function setSession(type) { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch {} }
+  async function acquireMic() {
     audio();
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("unsupported");
+    setSession("play-and-record");
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false, latency: 0 } });
     micSrc = ctx.createMediaStreamSource(micStream);
-    micGate = ctx.createGain(); micGate.gain.value = 0; micGate.connect(micBus);
-    analyser = ctx.createAnalyser(); analyser.fftSize = 512;
-    buildFx(); micReady = true; meterLoop();
+    if (!micGate) {
+      micGate = ctx.createGain(); micGate.gain.value = 0; micGate.connect(micBus);
+      analyser = ctx.createAnalyser(); analyser.fftSize = 512; meterLoop();
+    }
+    buildFx(); micReady = true;
   }
-  function setLive(on) {
+  function releaseMic() {
+    clearTimeout(releaseTimer);
     if (!micReady) return;
-    live = on; micGate.gain.setTargetAtTime(on ? 1 : 0, now(), 0.02);
+    setLive(false);
+    try { micStream.getTracks().forEach(t => t.stop()); } catch {}
+    try { micSrc.disconnect(); } catch {}
+    micSrc = null; micStream = null; micReady = false;
+    setSession("playback");
+    if (ctx && ctx.state !== "running") ctx.resume();
+    $("micHint").textContent = $("lockMic").checked ? "Tik om live te gaan" : "Hou ingedrukt om te praten";
+  }
+  function scheduleRelease() { clearTimeout(releaseTimer); releaseTimer = setTimeout(releaseMic, 1500); }
+  function setLive(on) {
+    if (!micReady && on) return;
+    live = on;
+    if (micGate) micGate.gain.setTargetAtTime(on ? 1 : 0, now(), 0.02);
     $("micBtn").classList.toggle("live", on);
     $("micHint").textContent = on ? "🔴 LIVE" : ($("lockMic").checked ? "Tik om live te gaan" : "Hou ingedrukt om te praten");
   }
@@ -847,19 +868,25 @@
     $("micHint").textContent = "Microfoon niet beschikbaar";
   }
   const micBtn = $("micBtn");
+  micBtn.classList.remove("off");
+  $("micHint").textContent = "Hou ingedrukt om te praten";
   micBtn.addEventListener("pointerdown", async (e) => {
     e.preventDefault();
+    pressed = true; clearTimeout(releaseTimer);
+    const lock = $("lockMic").checked;
+    if (lock && live) { releaseMic(); return; }
     if (!micReady) {
-      try { await initMic(); micBtn.classList.remove("off"); $("micHint").textContent = $("lockMic").checked ? "Tik om live te gaan" : "Hou ingedrukt om te praten"; }
-      catch (err) { micError(err); }
-      return;
+      try { $("micHint").textContent = "Microfoon starten…"; await acquireMic(); }
+      catch (err) { micError(err); return; }
     }
-    if ($("lockMic").checked) setLive(!live); else setLive(true);
+    if (lock || pressed) setLive(true); else scheduleRelease();
   });
-  ["pointerup", "pointerleave", "pointercancel"].forEach(ev => micBtn.addEventListener(ev, () => { if (micReady && !$("lockMic").checked) setLive(false); }));
+  ["pointerup", "pointerleave", "pointercancel"].forEach(ev => micBtn.addEventListener(ev, () => {
+    pressed = false;
+    if (!$("lockMic").checked && (live || micReady)) { setLive(false); scheduleRelease(); }
+  }));
   micBtn.addEventListener("contextmenu", e => e.preventDefault());
-  $("lockMic").addEventListener("change", () => { if (micReady) setLive(false); });
-
+  $("lockMic").addEventListener("change", () => releaseMic());
 
   // ---------- Rounds ----------
   const DEFAULT_ROUNDS = ["1 rij", "2 rijen", "4 hoeken", "Letter X", "Letter T", "Buitenrand", "Letter L", "3 rijen", "Volle kaart (dubbele punten!)"];
