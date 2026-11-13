@@ -1003,7 +1003,7 @@
   fillVoices(PREMADE, store.get("elVoice", PREMADE[0][0]));
   elKey.value = store.get("elKey", "");
   elText.value = store.get("elText", DEFAULT_INTRO);
-  [["elKey", elKey], ["elText", elText], ["elVoice", elVoice]].forEach(([k, el]) => el.addEventListener("change", () => store.set(k, el.value)));
+  [["elKey", elKey], ["elText", elText], ["elVoice", elVoice]].forEach(([k, el]) => el.addEventListener("change", () => store.set(k, el.value.trim())));
 
   async function loadIntroFromCache() {
     try {
@@ -1021,7 +1021,10 @@
     elStatus.textContent = "Stemmen laden…";
     try {
       const r = await fetch(EL + "/voices", { headers: { "xi-api-key": elKey.value.trim() } });
-      if (!r.ok) throw new Error(r.status === 401 ? "Key klopt niet (401)." : "Fout " + r.status);
+      if (!r.ok) {
+        let d = ""; try { const j = await r.json(); d = j.detail && (j.detail.message || j.detail.status) || ""; } catch {}
+        throw new Error(`Fout ${r.status}${d ? ": " + d : ""}. Je kan dit overslaan en gewoon op Genereer tikken.`);
+      }
       const j = await r.json();
       const list = j.voices.map(v => [v.voice_id, v.name + (v.labels && v.labels.description ? " (" + v.labels.description + ")" : "")]);
       fillVoices(list, elVoice.value); store.set("elVoice", elVoice.value);
