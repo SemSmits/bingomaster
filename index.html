@@ -1054,13 +1054,7 @@
       });
       intro.voice = await new Promise((res, rej) => ctx.decodeAudioData(v.slice(0), res, rej));
       await db.cachePut("intro_voice", v).catch(() => {});
-      elStatus.textContent = "Applaus genereren…";
-      try {
-        const a = await elFetchAudio(`${EL}/sound-generation`, { text: "Huge excited crowd cheering, whistling and applauding loudly at a live game show", duration_seconds: 7, prompt_influence: 0.5 });
-        intro.applause = await new Promise((res, rej) => ctx.decodeAudioData(a.slice(0), res, rej));
-        await db.cachePut("intro_applause", a).catch(() => {});
-        elStatus.textContent = "Klaar! Tik op Afspelen om te testen.";
-      } catch (e) { elStatus.textContent = "Stem is klaar. Applaus lukte niet (" + e.message + "), ik gebruik het standaard applaus."; }
+      elStatus.textContent = "Klaar! Tik op Afspelen om te testen.";
     } catch (e) {
       elStatus.textContent = "Mislukt: " + e.message;
     }
@@ -1069,12 +1063,10 @@
   function playIntro() {
     audio();
     if (!intro.voice) { openIntro(); elStatus.textContent = "Nog geen opkomst gemaakt. Vul je key in en tik op Genereer."; return; }
-    const t = ctx.currentTime + 0.05;
-    const s1 = ctx.createBufferSource(); s1.buffer = intro.voice; s1.connect(sfxBus); s1.start(t);
-    const at = t + Math.max(0, intro.voice.duration - 0.6);
-    if (intro.applause) { const s2 = ctx.createBufferSource(); s2.buffer = intro.applause; s2.connect(sfxBus); s2.start(at); }
-    else setTimeout(() => { play("applause"); SFX.applause(5); }, (at - ctx.currentTime) * 1000);
-    setTimeout(() => play("airhorn"), (at - ctx.currentTime + 0.2) * 1000);
+    // Voice only, boosted; the limiter on the SFX path catches the peaks
+    const s1 = ctx.createBufferSource(); s1.buffer = intro.voice;
+    const boost = ctx.createGain(); boost.gain.value = 2.5;
+    s1.connect(boost).connect(sfxBus); s1.start();
   }
   function openIntro() { $("introSheet").classList.add("show"); }
   $("introBtn").addEventListener("click", playIntro);
