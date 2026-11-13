@@ -1054,19 +1054,58 @@
       });
       intro.voice = await new Promise((res, rej) => ctx.decodeAudioData(v.slice(0), res, rej));
       await db.cachePut("intro_voice", v).catch(() => {});
+      if (!intro.applause) {
+        elStatus.textContent = "Applaus genereren…";
+        try {
+          const a = await elFetchAudio(`${EL}/sound-generation`, { text: "Excited crowd cheering, whistling and applauding at a live game show", duration_seconds: 5, prompt_influence: 0.5 });
+          intro.applause = await new Promise((res, rej) => ctx.decodeAudioData(a.slice(0), res, rej));
+          await db.cachePut("intro_applause", a).catch(() => {});
+        } catch {}
+      }
       elStatus.textContent = "Klaar! Tik op Afspelen om te testen.";
     } catch (e) {
       elStatus.textContent = "Mislukt: " + e.message;
     }
   });
 
-  function playIntro() {
+  // Dedicated voice chain: normalize, compress for loudness, limit, then the SFX volume slider
+  let voiceIn = null;
+  function voiceChain() {
+    if (voiceIn) return voiceIn;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -28; comp.ratio.value = 5; comp.knee.value = 6; comp.attack.value = 0.003; comp.release.value = 0.25;
+    const makeup = ctx.createGain(); makeup.gain.value = 3.2;
+    const lim = ctx.createDynamicsCompressor();
+    lim.threshold.value = -1; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
+    voiceIn = ctx.createGain();
+    voiceIn.connect(comp).connect(makeup).connect(lim).connect(sfxOut);
+    return voiceIn;
+  }
+  function peakGain(buf) {
+    let peak = 0;
+    for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i += 4) peak = Math.max(peak, Math.abs(d[i])); }
+    return peak > 0 ? 0.95 / peak : 1;
+  }
+  function playAt(buf, when, gain, dest = sfxBus) {
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = gain;
+    src.connect(g).connect(dest); src.start(when); return g;
+  }
+  async function playIntro() {
     audio();
     if (!intro.voice) { openIntro(); elStatus.textContent = "Nog geen opkomst gemaakt. Vul je key in en tik op Genereer."; return; }
-    // Voice only, boosted; the limiter on the SFX path catches the peaks
-    const s1 = ctx.createBufferSource(); s1.buffer = intro.voice;
-    const boost = ctx.createGain(); boost.gain.value = 2.5;
-    s1.connect(boost).connect(sfxBus); s1.start();
+    const t = ctx.currentTime + 0.1;
+    playAt(intro.voice, t, peakGain(intro.voice), voiceChain());
+    // Light hype at the end: crowd + one airhorn, kept well below the voice
+    const end = t + Math.max(0, intro.voice.duration - 0.4);
+    const crowd = intro.applause || await loadRemote("kidsyay");
+    if (crowd) {
+      const g = playAt(crowd, end, 0.35);
+      g.gain.setValueAtTime(0.35, end + Math.min(crowd.duration, 5) - 1.2);
+      g.gain.linearRampToValueAtTime(0, end + Math.min(crowd.duration, 5));
+    }
+    const horn = await loadRemote("airhorn");
+    if (horn) playAt(horn, end + 0.15, 0.25);
   }
   function openIntro() { $("introSheet").classList.add("show"); }
   $("introBtn").addEventListener("click", playIntro);
